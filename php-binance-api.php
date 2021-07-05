@@ -644,20 +644,73 @@ class API
         
         return $this->exchangeInfo;
     }
-
+    
+    /**
+     * assetDetail - Fetch details of assets supported on Binance
+     * 
+     * @link https://binance-docs.github.io/apidocs/spot/en/#asset-detail-user_data
+     * 
+     * @property int $weight 1
+     * 
+     * @return array containing the response
+     */
     public function assetDetail()
     {
-        $params["wapi"] = true;
-        return $this->httpRequest("v3/assetDetail.html", 'GET', $params, true);
+        $params["sapi"] = true;
+        $arr = $this->httpRequest("v1/asset/assetDetail", 'GET', $params, true);
+        // wrap into another array for backwards compatibility with the old wapi one
+        if (!empty($arr['BTC']['withdrawFee'])) {
+            return array(
+                'success'     => 1,
+                'assetDetail' => $arr,
+                );
+        } else {
+            return array(
+                'success'     => 0,
+                'assetDetail' => array(),
+                );
+            
+        }
     }
     
+    /**
+     * userAssetDribbletLog - Log of the conversion of the dust assets to BNB
+     * @deprecated
+     */
     public function userAssetDribbletLog()
     {
         $params["wapi"] = true;
+        trigger_error('Deprecated - function will disappear on 2021-08-01 from Binance. Please switch to $api->dustLog().', E_USER_DEPRECATED);
         return $this->httpRequest("v3/userAssetDribbletLog.html", 'GET', $params, true);
     }
     
     /**
+     * dustLog - Log of the conversion of the dust assets to BNB
+     * 
+     * @link https://binance-docs.github.io/apidocs/spot/en/#dustlog-user_data
+     * 
+     * @property int $weight 1
+     * 
+     * @param long  $startTime  (optional)  Start time, e.g. 1617580799000
+     * @param long  $endTime    (optional)  End time, e.g. 1617580799000. Endtime is mandatory if startTime is set.
+     * 
+     * @return array containing the response
+     * @throws \Exception
+     */
+    public function dustLog($startTime = NULL, $endTime = NULL)
+    {
+        $params["sapi"] = true;
+        if (!empty($startTime) && !empty($endTime)) {
+            $params['startTime'] = $startTime;
+            $params['endTime'] = $endTime;
+        }
+
+        return $this->httpRequest("v1/asset/dribblet", 'GET', $params, true);
+    }
+    
+    /**
+     * @deprecated
+     *
      * Fetch current(daily) trade fee of symbol, values in percentage.
      * for more info visit binance official api document
      *
@@ -671,38 +724,62 @@ class API
             "symbol" => $symbol,
             "wapi" => true,
         ];
+        trigger_error('Function tradeFee is deprecated and will be removed from Binance on Aug 1, 2021. Please use $api->commissionFee', E_USER_DEPRECATED);
         
         return $this->httpRequest("v3/tradeFee.html", 'GET', $params, true);
     }
+    
+    /**
+     * commissionFee - Fetch commission trade fee
+     * 
+     * @link https://binance-docs.github.io/apidocs/spot/en/#trade-fee-user_data
+     * 
+     * @property int $weight 1
+     * 
+     * @param string $symbol  (optional)  Should be a symbol, e.g. BNBUSDT or empty to get the full list
+     * 
+     * @return array containing the response
+     * @throws \Exception
+     */    
+    public function commissionFee($symbol = '')
+    {
+        $params = array('sapi' => true);
+        if ($symbol != '' && gettype($symbol) == 'string')
+            $params['symbol'] = $symbol;
+
+        return $this->httpRequest("v1/asset/tradeFee", 'GET', $params, true);
+    }
 
     /**
-     * withdraw requests a asset be withdrawn from binance to another wallet
-     *
-     * $asset = "BTC";
-     * $address = "1C5gqLRs96Xq4V2ZZAR1347yUCpHie7sa";
-     * $amount = 0.2;
-     * $response = $api->withdraw($asset, $address, $amount);
-     *
-     * $address = "44tLjmXrQNrWJ5NBsEj2R77ZBEgDa3fEe9GLpSf2FRmhexPvfYDUAB7EXX1Hdb3aMQ9FLqdJ56yaAhiXoRsceGJCRS3Jxkn";
-     * $addressTag = "0e5e38a01058dbf64e53a4333a5acf98e0d5feb8e523d32e3186c664a9c762c1";
-     * $amount = 0.1;
-     * $response = $api->withdraw($asset, $address, $amount, $addressTag);
-     *
-     * @param $asset string the currency such as BTC
-     * @param $address string the addressed to whihc the asset should be deposited
-     * @param $amount double the amount of the asset to transfer
-     * @param $addressTag string adtional transactionid required by some assets
-     * @return array with error message or array transaction
+     * withdraw - Submit a withdraw request to move an asset to another wallet
+     * 
+     * @link https://binance-docs.github.io/apidocs/spot/en/#withdraw-sapi
+     * 
+     * @example https://github.com/jaggedsoft/php-binance-api#withdraw   Standard withdraw
+     * @example https://github.com/jaggedsoft/php-binance-api#withdraw-with-addresstag   Withdraw with addressTag for e.g. XRP
+     * 
+     * @property int $weight 1
+     * 
+     * @param string $asset               (mandatory)  An asset, e.g. BTC
+     * @param string $address             (mandatory)  The address where to send, e.g. 1C5gqLRs96Xq4V2ZZAR1347yUCpHie7sa or 44tLjmXrQNrWJ5NBsEj2R77ZBEgDa3fEe9GLpSf2FRmhexPvfYDUAB7EXX1Hdb3aMQ9FLqdJ56yaAhiXoRsceGJCRS3Jxkn
+     * @param string $amount              (mandatory)  The amount, e.g. 0.2
+     * @param string $addressTag          (optional)   Mandatory secondary address for some assets (XRP,XMR,etc), e.g. 0e5e38a01058dbf64e53a4333a5acf98e0d5feb8e523d32e3186c664a9c762c1
+     * @param string $addressName         (optional)   Description of the address
+     * @param string $transactionFeeFlag  (optional)   When making internal transfer, true for returning the fee to the destination account; false for returning the fee back to the departure account.
+     * @param string $network             (optional)   
+     * @param string $orderId             (optional)   Client id for withdraw
+     * 
+     * @return array containing the response
      * @throws \Exception
      */
-    public function withdraw(string $asset, string $address, $amount, $addressTag = null, $addressName = "", bool $transactionFeeFlag = false, $network = null)
+    public function withdraw(string $asset, string $address, $amount, $addressTag = null, $addressName = "", bool $transactionFeeFlag = false, $network = null, $orderId = null)
     {
         $options = [
-            "asset" => $asset,
+            "coin" => $asset,
             "address" => $address,
             "amount" => $amount,
             "transactionFeeFlag" => $transactionFeeFlag,
-            "wapi" => true,
+            "sapi" => true,
         ];
         if (is_null($addressName) === false && empty($addressName) === false) {
             $options['name'] = str_replace(' ', '%20', $addressName);
@@ -713,88 +790,128 @@ class API
         if (is_null($network) === false && empty($network) === false) {
             $options['network'] = $network;
         }
-        return $this->httpRequest("v3/withdraw.html", "POST", $options, true);
+        if (is_null($orderId) === false && empty($orderId) === false) {
+            $options['withdrawOrderId'] = $orderId;
+        }
+        return $this->httpRequest("v1/capital/withdraw/apply", "POST", $options, true);
     }
 
     /**
-     * depositAddress get the deposit address for an asset
-     *
-     * $depositAddress = $api->depositAddress("VEN");
-     *
-     * @param $asset string the currency such as BTC
-     * @return array with error message or array deposit address information
+     * depositAddress - Get the deposit address for an asset
+     * 
+     * @link https://binance-docs.github.io/apidocs/spot/en/#deposit-address-supporting-network-user_data
+     * 
+     * @property int $weight 1
+     * 
+     * @param string $asset    (mandatory)  An asset, e.g. BTC
+     * @param string $network  (optional)   You can get network in networkList from /sapi/v1/capital/config/getall   
+     * 
+     * @return array containing the response
      * @throws \Exception
      */
-    public function depositAddress(string $asset)
+    public function depositAddress(string $asset, $network = null)
     {
         $params = [
-            "wapi" => true,
-            "asset" => $asset,
+            "sapi" => true,
+            "coin" => $asset,
         ];
-        return $this->httpRequest("v3/depositAddress.html", "GET", $params, true);
+        if (is_null($network) === false && empty($network) === false) {
+            $params['network'] = $network;
+        }
+        
+        $return = $this->httpRequest("v1/capital/deposit/address", "GET", $params, true);
+
+        // Adding for backwards compatibility with wapi
+        $return['asset'] = $return['coin'];
+        $return['addressTag'] = $return['tag'];
+        
+        if (!empty($return['address'])) {
+            $return['success'] = 1;
+        } else {
+            $return['success'] = 0;
+        }
+
+        return $return;
     }
 
     /**
-     * depositAddress get the deposit history for an asset
-     *
-     * $depositHistory = $api->depositHistory();
-     *
-     * $depositHistory = $api->depositHistory( "BTC" );
-     *
-     * @param $asset string empty or the currency such as BTC
-     * @param $params array optional startTime, endTime, status parameters
-     * @return array with error message or array deposit history information
+     * depositHistory - Get the deposit history for one or all assets
+     * 
+     * @link https://binance-docs.github.io/apidocs/spot/en/#deposit-history-supporting-network-user_data
+     * 
+     * @property int $weight 1
+     * 
+     * @param string $asset    (optional)  An asset, e.g. BTC - or leave empty for all
+     * @param array  $params   (optional)  An array of additional parameters that the API endpoint allows   
+     * 
+     * @return array containing the response
      * @throws \Exception
      */
     public function depositHistory(string $asset = null, array $params = [])
     {
-        $params["wapi"] = true;
+        $params["sapi"] = true;
         if (is_null($asset) === false) {
-            $params['asset'] = $asset;
+            $params['coin'] = $asset;
         }
-        return $this->httpRequest("v3/depositHistory.html", "GET", $params, true);
+        $return = $this->httpRequest("v1/capital/deposit/hisrec", "GET", $params, true);
+
+        // Adding for backwards compatibility with wapi
+        foreach ($return as $key->$item) {
+            $return[$key]['asset'] = $item['coin'];
+        }
+        
+        return $return;
+        
     }
 
     /**
-     * withdrawHistory get the withdrawal history for an asset
-     *
-     * $withdrawHistory = $api->withdrawHistory();
-     *
-     * $withdrawHistory = $api->withdrawHistory( "BTC" );
-     *
-     * @param $asset string empty or the currency such as BTC
-     * @param $params array optional startTime, endTime, status parameters
-     * @return array with error message or array deposit history information
+     * withdrawHistory - Get the withdraw history for one or all assets
+     * 
+     * @link https://binance-docs.github.io/apidocs/spot/en/#withdraw-history-supporting-network-user_data
+     * 
+     * @property int $weight 1
+     * 
+     * @param string $asset    (optional)  An asset, e.g. BTC - or leave empty for all
+     * @param array  $params   (optional)  An array of additional parameters that the API endpoint allows: status, offset, limit, startTime, endTime  
+     * 
+     * @return array containing the response
      * @throws \Exception
      */
     public function withdrawHistory(string $asset = null, array $params = [])
     {
-        $params["wapi"] = true;
+        $params["sapi"] = true;
         if (is_null($asset) === false) {
-            $params['asset'] = $asset;
+            $params['coin'] = $asset;
         }
-        return $this->httpRequest("v3/withdrawHistory.html", "GET", $params, true);
+        // Wrapping in array for backwards compatibility with wapi
+        $return = array(
+            'withdrawList' => $this->httpRequest("v1/capital/withdraw/history", "GET", $params, true)
+            );
+        
+        // Adding for backwards compatibility with wapi
+        $return['success'] = 1;
+
+        return $return;
     }
 
     /**
-     * withdrawFee get the withdrawal fee for an asset
-     *
-     * $withdrawFee = $api->withdrawFee( "BTC" );
-     *
-     * @param $asset string currency such as BTC
-     * @return array with error message or array containing withdrawFee
+     * withdrawFee - Get the withdrawal fee for an asset
+     * 
+     * @property int $weight 1
+     * 
+     * @param string $asset    (mandatory)  An asset, e.g. BTC
+     * 
+     * @return array containing the response
      * @throws \Exception
      */
     public function withdrawFee(string $asset)
     {
-        $params = [
-            "wapi" => true,
-        ];
+        $return = $this->assetDetail();
 
-        $response = $this->httpRequest("v3/assetDetail.html", "GET", $params, true);
-
-        if (isset($response['success'], $response['assetDetail'], $response['assetDetail'][$asset]) && $response['success']) {
-            return $response['assetDetail'][$asset];
+        if (isset($return['success'], $return['assetDetail'], $return['assetDetail'][$asset]) && $return['success']) {
+            return $return['assetDetail'][$asset];
+        } else {
+            return array();
         }
     }
 
@@ -2630,12 +2747,12 @@ class API
     }
 
     /**
-     * systemStatus - Status indicator for sapi and wapi
-     * 0 = Normal, 1 = System Maintenance
-     * 
+     * systemStatus - Status indicator for api sapi
+     *
+     * @link https://binance-docs.github.io/apidocs/spot/en/#test-connectivity
      * @link https://binance-docs.github.io/apidocs/spot/en/#system-status-system
      * 
-     * @property int $weight 1
+     * @property int $weight 2
      * 
      * @return array containing the response
      * @throws \Exception
@@ -2651,7 +2768,6 @@ class API
         }
          
         $arr['sapi'] = $this->httpRequest("v1/system/status", 'GET', [ 'sapi' => true ], true);
-        $arr['wapi'] = $this->httpRequest("v3/systemStatus.html", 'GET', [ 'wapi' => true ], true);
         return $arr;
     }
     
@@ -2685,7 +2801,7 @@ class API
         if ($endTime > 0)
             $params['endTime'] = $startTime;
         if ($nbrDays != 5)
-            $params['limit'] = $limit;
+            $params['limit'] = $nbrDays;
             
         return $this->httpRequest("v1/accountSnapshot", 'GET', $params, true);
     }
@@ -2694,9 +2810,8 @@ class API
      * accountStatus - Fetch account status detail.
      * 
      * @link https://binance-docs.github.io/apidocs/spot/en/#account-status-user_data
-     * @link https://binance-docs.github.io/apidocs/spot/en/#account-status-sapi-user_data
      * 
-     * @property int $weight 2
+     * @property int $weight 1
      * 
      * @return array containing the response
      * @throws \Exception
@@ -2705,7 +2820,6 @@ class API
     {
         $arr = array();
         $arr['sapi'] = $this->httpRequest("v1/account/status", 'GET', [ 'sapi' => true ], true);
-        $arr['wapi'] = $this->httpRequest("v3/accountStatus.html", 'GET', [ 'wapi' => true ], true);
         return $arr;
     }
     
@@ -2713,9 +2827,8 @@ class API
      * apiTradingStatus - Fetch account API trading status detail.
      * 
      * @link https://binance-docs.github.io/apidocs/spot/en/#account-api-trading-status-user_data
-     * @link https://binance-docs.github.io/apidocs/spot/en/#account-api-trading-status-sapi-user_data
      * 
-     * @property int $weight 2
+     * @property int $weight 1
      * 
      * @return array containing the response
      * @throws \Exception
@@ -2724,7 +2837,6 @@ class API
     {
         $arr = array();
         $arr['sapi'] = $this->httpRequest("v1/account/apiTradingStatus", 'GET', [ 'sapi' => true ], true);
-        $arr['wapi'] = $this->httpRequest("v3/apiTradingStatus.html", 'GET', [ 'wapi' => true ], true);
         return $arr;
     }    
 }
